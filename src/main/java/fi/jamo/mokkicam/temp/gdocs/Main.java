@@ -1,8 +1,3 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package fi.jamo.mokkicam.temp.gdocs;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
@@ -31,18 +26,16 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 
-/**
- *
- * @author jamo
- */
 public class Main {
 
     public static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     public static final HttpTransport HTTP_TRANSPORT = new ApacheHttpTransport();
 
-    private static final List SCOPES = Arrays.asList(new String[]{"https://spreadsheets.google.com/feeds", "https://spreadsheets.google.com/feeds/spreadsheets/private/full"});
+    private static final String SPREADSHEET_FEED = "https://spreadsheets.google.com/feeds/spreadsheets/private/full";
+
     private static final URL SPREADSHEET_FEED_URL;
 
     private static final String ACCOUNT_ID = "serviceAccountId";
@@ -50,8 +43,12 @@ public class Main {
     private static final String DOCUMENT_NAME = "documentName";
     private static final String SHEET_NAME = "sheetName";
     private static final String VALUES = "values";
+    private static final String FILE = "file";
+    private static final String KEYS = "keys";
 
-    private static final Set<String> COMMANDS = new HashSet<String>(5);
+    private static final Set<String> COMMANDS = new HashSet<>(5);
+
+    private static final List<String> SCOPES = Arrays.asList(new String[]{"https://spreadsheets.google.com/feeds", SPREADSHEET_FEED});
 
     static {
         COMMANDS.add(ACCOUNT_ID);
@@ -59,11 +56,11 @@ public class Main {
         COMMANDS.add(DOCUMENT_NAME);
         COMMANDS.add(SHEET_NAME);
         COMMANDS.add(VALUES);
-    }
+        COMMANDS.add(FILE);
+        COMMANDS.add(KEYS);
 
-    static {
         try {
-            SPREADSHEET_FEED_URL = new URL("https://spreadsheets.google.com/feeds/spreadsheets/private/full");
+            SPREADSHEET_FEED_URL = new URL(SPREADSHEET_FEED);
         } catch (MalformedURLException ex) {
             throw new RuntimeException(ex);
         }
@@ -84,6 +81,18 @@ public class Main {
             }
         }
 
+        try {
+            uploadData(params);
+        } catch (Exception e) {
+            System.out.println("Failed to upload: " + params.get(VALUES));
+            throw new IllegalStateException(e);
+        }
+    }
+
+    public static void uploadData(Map<String, String> params)
+            throws AuthenticationException, MalformedURLException, IOException, ServiceException, GeneralSecurityException {
+        System.out.println(params);
+
         GoogleCredential googleCredentials = new GoogleCredential.Builder()
                 .setJsonFactory(JSON_FACTORY)
                 .setTransport(HTTP_TRANSPORT)
@@ -100,7 +109,8 @@ public class Main {
 
         // Make a request to the API and get all spreadsheets.
         SpreadsheetFeed feed = service.getFeed(SPREADSHEET_FEED_URL,
-                SpreadsheetFeed.class);
+                SpreadsheetFeed.class
+        );
         List<SpreadsheetEntry> spreadsheets = feed.getEntries();
         SpreadsheetEntry spreadsheet = getSpreadSheetByName(spreadsheets, params.get(DOCUMENT_NAME));
 
@@ -111,30 +121,42 @@ public class Main {
 
         // Fetch the list feed of the worksheet.
         URL listFeedUrl = worksheet.getListFeedUrl();
-        ListFeed listFeed = service.getFeed(listFeedUrl, ListFeed.class);
-        System.out.println(listFeed);
+//        ListFeed listFeed = service.getFeed(listFeedUrl, ListFeed.class);
 
         // Create a local representation of the new row.
-        ListEntry row = new ListEntry();
-        String[] entries = params.get(VALUES).split(";");
-        for (String entry : entries) {
-            String[] keyAndValue = entry.split("=");
-            row.getCustomElements().setValueLocal(keyAndValue[0], keyAndValue[1]);
+        ListEntry toBeInstertedRow = new ListEntry();
+
+        if (params.containsKey(VALUES)) {
+            String[] entries = params.get(VALUES).split(";");
+            for (String entry : entries) {
+                String[] keyAndValue = entry.split("=");
+                toBeInstertedRow.getCustomElements().setValueLocal(keyAndValue[0], keyAndValue[1]);
+            }
+            service.insert(listFeedUrl, toBeInstertedRow);
+            System.out.println("Successfully uploaded: " + params.get(VALUES));
+        } else if (params.containsKey(FILE) && params.containsKey(KEYS)) {
+            Scanner fileReader = new Scanner(new File(params.get(FILE)));
+            String[] keys = params.get(KEYS).split(",");
+            while (fileReader.hasNextLine()) {
+                toBeInstertedRow = new ListEntry();
+                String[] entries = fileReader.nextLine().split(",");
+                for (int i = 0; i < keys.length; i++) {
+                    toBeInstertedRow.getCustomElements().setValueLocal(keys[i], entries[i]);
+                }
+                service.insert(listFeedUrl, toBeInstertedRow);
+                System.out.println("Successfully uploaded: " + Arrays.deepToString(entries));
+            }
         }
 
-        // Send the new row to the API for insertion.
-        row = service.insert(listFeedUrl, row);
     }
 
     private static WorksheetEntry getWorksheetByName(List<WorksheetEntry> worksheets, String name) {
         for (WorksheetEntry worksheet : worksheets) {
-            System.out.println(worksheet.getTitle().getPlainText() + " : " + name);
             if (worksheet.getTitle().getPlainText().equals(name)) {
-                System.out.println("found");
                 return worksheet;
             }
         }
-        return null;
+        throw new IllegalStateException("No worksheet found with name: " + name);
     }
 
     private static SpreadsheetEntry getSpreadSheetByName(List<SpreadsheetEntry> spreadsheets, String name) {
@@ -143,6 +165,6 @@ public class Main {
                 return spreadsheet;
             }
         }
-        return null;
+        throw new IllegalStateException("No spreadsheet found with name: " + name);
     }
 }
