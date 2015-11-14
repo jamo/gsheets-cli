@@ -91,7 +91,6 @@ public class Main {
 
     public static void uploadData(Map<String, String> params)
             throws AuthenticationException, MalformedURLException, IOException, ServiceException, GeneralSecurityException {
-        System.out.println(params);
 
         GoogleCredential googleCredentials = new GoogleCredential.Builder()
                 .setJsonFactory(JSON_FACTORY)
