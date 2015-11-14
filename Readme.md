@@ -4,7 +4,7 @@
 
 After building shaded minified jar (`mvn package`) run it like
 ```shell
-$ java -jar target/gsheets-cli-1.0-SNAPSHOT.jar <options>
+$ java -Xmx32m -client -jar target/gsheets-cli-1.0-SNAPSHOT.jar <options>
 ```
 
 Service account needs to be created at: https://console.developers.google.com/apis/credentials - select to use the p12 file
