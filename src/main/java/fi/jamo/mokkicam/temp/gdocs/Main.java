@@ -7,7 +7,6 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.gdata.client.spreadsheet.SpreadsheetService;
 import com.google.gdata.data.spreadsheet.ListEntry;
-import com.google.gdata.data.spreadsheet.ListFeed;
 import com.google.gdata.data.spreadsheet.SpreadsheetEntry;
 import com.google.gdata.data.spreadsheet.SpreadsheetFeed;
 import com.google.gdata.data.spreadsheet.WorksheetEntry;
@@ -16,6 +15,7 @@ import com.google.gdata.util.AuthenticationException;
 import com.google.gdata.util.ServiceException;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -34,7 +34,8 @@ public class Main {
     public static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     public static final HttpTransport HTTP_TRANSPORT = new ApacheHttpTransport();
 
-    private static final String SPREADSHEET_FEED = "https://spreadsheets.google.com/feeds/spreadsheets/private/full";
+    private static final String SPREADSHEET_FEED =
+            "https://spreadsheets.google.com/feeds/spreadsheets/private/full";
 
     private static final URL SPREADSHEET_FEED_URL;
 
@@ -47,10 +48,10 @@ public class Main {
     private static final String KEYS = "keys";
     private static final String SEPARATOR_CHAR = "separator";
 
-
     private static final Set<String> COMMANDS = new HashSet<>(6);
 
-    private static final List<String> SCOPES = Arrays.asList(new String[]{"https://spreadsheets.google.com/feeds", SPREADSHEET_FEED});
+    private static final List<String> SCOPES =
+            Arrays.asList(new String[] {"https://spreadsheets.google.com/feeds", SPREADSHEET_FEED});
 
     static {
         COMMANDS.add(ACCOUNT_ID);
@@ -70,7 +71,8 @@ public class Main {
     }
 
     public static void main(String[] args)
-            throws AuthenticationException, MalformedURLException, IOException, ServiceException, GeneralSecurityException {
+            throws AuthenticationException, MalformedURLException, IOException, ServiceException,
+                    GeneralSecurityException {
 
         Map<String, String> params = new HashMap<>(5);
         Iterator<String> argsIterator = Arrays.asList(args).iterator();
@@ -80,76 +82,84 @@ public class Main {
             if (COMMANDS.contains(option)) {
                 params.put(option, argsIterator.next());
             } else {
-                throw new RuntimeException("Unknown arg: " + option + " params: " + Arrays.deepToString(args));
+                throw new RuntimeException(
+                        "Unknown arg: " + option + " params: " + Arrays.deepToString(args));
             }
         }
 
         try {
             uploadData(params);
-        } catch (Exception e) {
+        } catch (Exception e) { // Whatever happens we wan't to control how to exit.
             System.out.println("Failed to upload: " + params.get(VALUES));
             throw new IllegalStateException(e);
         }
     }
 
     public static void uploadData(Map<String, String> params)
-            throws AuthenticationException, MalformedURLException, IOException, ServiceException, GeneralSecurityException {
+            throws AuthenticationException, MalformedURLException, IOException, ServiceException,
+                    GeneralSecurityException {
 
-        GoogleCredential googleCredentials = new GoogleCredential.Builder()
-                .setJsonFactory(JSON_FACTORY)
-                .setTransport(HTTP_TRANSPORT)
-                .setServiceAccountId(params.get(ACCOUNT_ID))
-                .setServiceAccountPrivateKeyFromP12File(new File(params.get(P12_PATH)))
-                .setServiceAccountScopes(SCOPES)
-                .build();
+        GoogleCredential googleCredentials =
+                new GoogleCredential.Builder()
+                        .setJsonFactory(JSON_FACTORY)
+                        .setTransport(HTTP_TRANSPORT)
+                        .setServiceAccountId(params.get(ACCOUNT_ID))
+                        .setServiceAccountPrivateKeyFromP12File(new File(params.get(P12_PATH)))
+                        .setServiceAccountScopes(SCOPES)
+                        .build();
 
-        SpreadsheetService service
-                = new SpreadsheetService("SpreadsheetUploader");
+        SpreadsheetService service = new SpreadsheetService("SpreadsheetUploader");
         service.setProtocolVersion(SpreadsheetService.Versions.V3);
 
         service.setOAuth2Credentials(googleCredentials);
 
-        // Make a request to the API and get all spreadsheets.
-        SpreadsheetFeed feed = service.getFeed(SPREADSHEET_FEED_URL,
-                SpreadsheetFeed.class
-        );
-        List<SpreadsheetEntry> spreadsheets = feed.getEntries();
-        SpreadsheetEntry spreadsheet = getSpreadSheetByName(spreadsheets, params.get(DOCUMENT_NAME));
+        SpreadsheetFeed feed = service.getFeed(SPREADSHEET_FEED_URL, SpreadsheetFeed.class);
+        SpreadsheetEntry spreadsheet =
+                getSpreadSheetByName(feed.getEntries(), params.get(DOCUMENT_NAME));
 
-        WorksheetFeed worksheetFeed = service.getFeed(
-                spreadsheet.getWorksheetFeedUrl(), WorksheetFeed.class);
+        WorksheetFeed worksheetFeed =
+                service.getFeed(spreadsheet.getWorksheetFeedUrl(), WorksheetFeed.class);
         List<WorksheetEntry> worksheets = worksheetFeed.getEntries();
         WorksheetEntry worksheet = getWorksheetByName(worksheets, params.get(SHEET_NAME));
 
         // Fetch the list feed of the worksheet.
         URL listFeedUrl = worksheet.getListFeedUrl();
-//        ListFeed listFeed = service.getFeed(listFeedUrl, ListFeed.class);
-
-        // Create a local representation of the new row.
-        ListEntry toBeInstertedRow = new ListEntry();
 
         if (params.containsKey(VALUES)) {
-            String[] entries = params.get(VALUES).split(params.get(SEPARATOR_CHAR));
-            for (String entry : entries) {
-                String[] keyAndValue = entry.split("=");
-                toBeInstertedRow.getCustomElements().setValueLocal(keyAndValue[0], keyAndValue[1]);
+            parseValues(params, service, listFeedUrl);
+        } else if (params.containsKey(FILE) && params.containsKey(KEYS)) {
+            parseFile(params, service, listFeedUrl);
+        }
+    }
+
+    private static void parseValues(
+            Map<String, String> params, SpreadsheetService service, URL listFeedUrl)
+            throws ServiceException, IOException {
+        ListEntry toBeInstertedRow = new ListEntry();
+        String[] entries = params.get(VALUES).split(params.get(SEPARATOR_CHAR));
+        for (String entry : entries) {
+            String[] keyAndValue = entry.split("=");
+            toBeInstertedRow.getCustomElements().setValueLocal(keyAndValue[0], keyAndValue[1]);
+        }
+        service.insert(listFeedUrl, toBeInstertedRow);
+        System.out.println("Successfully uploaded: " + params.get(VALUES));
+    }
+
+    private static void parseFile(
+            Map<String, String> params, SpreadsheetService service, URL listFeedUrl)
+            throws FileNotFoundException, IOException, ServiceException {
+        ListEntry toBeInstertedRow;
+        Scanner fileReader = new Scanner(new File(params.get(FILE)));
+        String[] keys = params.get(KEYS).split(params.get(SEPARATOR_CHAR));
+        while (fileReader.hasNextLine()) {
+            toBeInstertedRow = new ListEntry();
+            String[] entries = fileReader.nextLine().split(params.get(SEPARATOR_CHAR));
+            for (int i = 0; i < keys.length; i++) {
+                toBeInstertedRow.getCustomElements().setValueLocal(keys[i], entries[i]);
             }
             service.insert(listFeedUrl, toBeInstertedRow);
-            System.out.println("Successfully uploaded: " + params.get(VALUES));
-        } else if (params.containsKey(FILE) && params.containsKey(KEYS)) {
-            Scanner fileReader = new Scanner(new File(params.get(FILE)));
-            String[] keys = params.get(KEYS).split(params.get(SEPARATOR_CHAR));
-            while (fileReader.hasNextLine()) {
-                toBeInstertedRow = new ListEntry();
-                String[] entries = fileReader.nextLine().split(params.get(SEPARATOR_CHAR));
-                for (int i = 0; i < keys.length; i++) {
-                    toBeInstertedRow.getCustomElements().setValueLocal(keys[i], entries[i]);
-                }
-                service.insert(listFeedUrl, toBeInstertedRow);
-                System.out.println("Successfully uploaded: " + Arrays.deepToString(entries));
-            }
+            System.out.println("Successfully uploaded: " + Arrays.deepToString(entries));
         }
-
     }
 
     private static WorksheetEntry getWorksheetByName(List<WorksheetEntry> worksheets, String name) {
@@ -161,7 +171,8 @@ public class Main {
         throw new IllegalStateException("No worksheet found with name: " + name);
     }
 
-    private static SpreadsheetEntry getSpreadSheetByName(List<SpreadsheetEntry> spreadsheets, String name) {
+    private static SpreadsheetEntry getSpreadSheetByName(
+            List<SpreadsheetEntry> spreadsheets, String name) {
         for (SpreadsheetEntry spreadsheet : spreadsheets) {
             if (spreadsheet.getTitle().getPlainText().equals(name)) {
                 return spreadsheet;
