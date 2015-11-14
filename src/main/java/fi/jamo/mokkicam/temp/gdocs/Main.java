@@ -45,8 +45,10 @@ public class Main {
     private static final String VALUES = "values";
     private static final String FILE = "file";
     private static final String KEYS = "keys";
+    private static final String SEPARATOR_CHAR = "separator";
 
-    private static final Set<String> COMMANDS = new HashSet<>(5);
+
+    private static final Set<String> COMMANDS = new HashSet<>(6);
 
     private static final List<String> SCOPES = Arrays.asList(new String[]{"https://spreadsheets.google.com/feeds", SPREADSHEET_FEED});
 
@@ -58,6 +60,7 @@ public class Main {
         COMMANDS.add(VALUES);
         COMMANDS.add(FILE);
         COMMANDS.add(KEYS);
+        COMMANDS.add(SEPARATOR_CHAR);
 
         try {
             SPREADSHEET_FEED_URL = new URL(SPREADSHEET_FEED);
@@ -126,7 +129,7 @@ public class Main {
         ListEntry toBeInstertedRow = new ListEntry();
 
         if (params.containsKey(VALUES)) {
-            String[] entries = params.get(VALUES).split(";");
+            String[] entries = params.get(VALUES).split(params.get(SEPARATOR_CHAR));
             for (String entry : entries) {
                 String[] keyAndValue = entry.split("=");
                 toBeInstertedRow.getCustomElements().setValueLocal(keyAndValue[0], keyAndValue[1]);
@@ -135,10 +138,10 @@ public class Main {
             System.out.println("Successfully uploaded: " + params.get(VALUES));
         } else if (params.containsKey(FILE) && params.containsKey(KEYS)) {
             Scanner fileReader = new Scanner(new File(params.get(FILE)));
-            String[] keys = params.get(KEYS).split(",");
+            String[] keys = params.get(KEYS).split(params.get(SEPARATOR_CHAR));
             while (fileReader.hasNextLine()) {
                 toBeInstertedRow = new ListEntry();
-                String[] entries = fileReader.nextLine().split(",");
+                String[] entries = fileReader.nextLine().split(params.get(SEPARATOR_CHAR));
                 for (int i = 0; i < keys.length; i++) {
                     toBeInstertedRow.getCustomElements().setValueLocal(keys[i], entries[i]);
                 }
